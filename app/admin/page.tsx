@@ -17,7 +17,7 @@ export default async function AdminPage() {
         <div className="max-w-4xl mx-auto">
           <h1 className="text-3xl font-bold text-gray-900 mb-8">관리자 패널</h1>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <Link
               href="/admin/users"
               className="bg-white rounded-lg shadow-sm border p-6 hover:shadow-md transition-shadow"
@@ -33,6 +33,25 @@ export default async function AdminPage() {
                 <div className="ml-4">
                   <h3 className="text-lg font-medium text-gray-900">회원 관리</h3>
                   <p className="text-sm text-gray-500">사용자 계정 및 권한 관리</p>
+                </div>
+              </div>
+            </Link>
+
+            <Link
+              href="/admin/posts"
+              className="bg-white rounded-lg shadow-sm border p-6 hover:shadow-md transition-shadow"
+            >
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
+                    <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                  </div>
+                </div>
+                <div className="ml-4">
+                  <h3 className="text-lg font-medium text-gray-900">공고 관리</h3>
+                  <p className="text-sm text-gray-500">부적절한 공고 삭제 및 관리</p>
                 </div>
               </div>
             </Link>
@@ -68,6 +87,22 @@ export default async function AdminPage() {
                 <div className="ml-4">
                   <h3 className="text-lg font-medium text-gray-900">통계</h3>
                   <p className="text-sm text-gray-500">사이트 사용 통계 (구현 예정)</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-lg shadow-sm border p-6">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
+                    <svg className="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-5 5v-5zM4.502 6.072L13.5 2.5l.5 2.5-2.5 2.159-.007.007L18 12l-6 6H4.5l-2.5-2.5L4.5 6.072z" />
+                    </svg>
+                  </div>
+                </div>
+                <div className="ml-4">
+                  <h3 className="text-lg font-medium text-gray-900">알림</h3>
+                  <p className="text-sm text-gray-500">시스템 알림 관리 (구현 예정)</p>
                 </div>
               </div>
             </div>

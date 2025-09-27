@@ -1,145 +1,213 @@
-'use client'
+'use client';
 
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import Header from '@/components/Header'
-import { supabase } from '@/lib/supabase/client'
-import { useAuth } from '@/lib/hooks/useAuth'
-
-interface Banner {
-  id: number
-  image_url: string
-  link_url: string
-  created_at: string
-}
+import { useState, useEffect } from 'react';
+import { redirect } from 'next/navigation';
+import { supabase } from '@/lib/supabase/client';
+import { useAuth } from '@/lib/hooks/useAuth';
+import { useAdmin } from '@/lib/hooks/useAdmin';
+import Header from '@/components/Header';
+import { Banner } from '@/lib/types/database';
+import { PlusIcon, PencilIcon, TrashIcon, EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
 
 export default function AdminBannersPage() {
-  const { user, loading: authLoading } = useAuth()
-  const [banners, setBanners] = useState<Banner[]>([])
-  const [loading, setLoading] = useState(true)
-  const [isAdmin, setIsAdmin] = useState(false)
-  const [showAddModal, setShowAddModal] = useState(false)
+  const { user, loading: authLoading } = useAuth();
+  const { isAdmin, loading: adminLoading } = useAdmin();
+  const [banners, setBanners] = useState<Banner[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [editingBanner, setEditingBanner] = useState<Banner | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [formData, setFormData] = useState({
+    title: '',
     image_url: '',
-    link_url: ''
-  })
-  const router = useRouter()
+    link_url: '',
+    is_active: true,
+    display_order: 1
+  });
 
   useEffect(() => {
-    if (authLoading) return
-
-    if (!user) {
-      router.push('/login')
-      return
+    if (!authLoading && !adminLoading && !isAdmin) {
+      redirect('/');
     }
+  }, [authLoading, adminLoading, isAdmin]);
 
-    checkAdminAndFetchData()
-  }, [user, authLoading])
-
-  const checkAdminAndFetchData = async () => {
-    try {
-      // Check if current user is admin
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', user?.id)
-        .single()
-
-      if (profile?.role !== 'admin') {
-        router.push('/')
-        return
-      }
-
-      setIsAdmin(true)
-      await fetchBanners()
-    } catch (error) {
-      console.error('Error checking admin status:', error)
-      router.push('/')
+  useEffect(() => {
+    if (isAdmin) {
+      fetchBanners();
     }
-  }
+  }, [isAdmin]);
 
   const fetchBanners = async () => {
     try {
+      setLoading(true);
       const { data, error } = await supabase
         .from('banners')
         .select('*')
-        .order('created_at', { ascending: false })
+        .order('display_order', { ascending: true });
 
-      if (error) {
-        console.error('Error fetching banners:', error)
-      } else {
-        setBanners(data || [])
-      }
+      if (error) throw error;
+      setBanners(data || []);
     } catch (error) {
-      console.error('Error:', error)
+      console.error('Error fetching banners:', error);
+      alert('배너 목록을 불러오는 중 오류가 발생했습니다.');
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
-  const addBanner = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleImageUpload = async (file: File) => {
+    try {
+      setUploading(true);
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}.${fileExt}`;
+      const filePath = `banners/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('public')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('public')
+        .getPublicUrl(filePath);
+
+      setFormData(prev => ({ ...prev, image_url: publicUrl }));
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      alert('이미지 업로드 중 오류가 발생했습니다.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!formData.title.trim() || !formData.image_url.trim()) {
+      alert('제목과 이미지는 필수 항목입니다.');
+      return;
+    }
 
     try {
-      const { error } = await supabase
-        .from('banners')
-        .insert({
-          image_url: formData.image_url,
-          link_url: formData.link_url
-        })
+      const bannerData = {
+        title: formData.title.trim(),
+        image_url: formData.image_url,
+        link_url: formData.link_url.trim() || null,
+        is_active: formData.is_active,
+        display_order: formData.display_order,
+        created_by: user?.id
+      };
 
-      if (error) {
-        console.error('Error adding banner:', error)
-        alert('배너 추가 중 오류가 발생했습니다.')
+      if (editingBanner) {
+        const { error } = await supabase
+          .from('banners')
+          .update(bannerData)
+          .eq('id', editingBanner.id);
+
+        if (error) throw error;
+        alert('배너가 성공적으로 수정되었습니다.');
       } else {
-        alert('배너가 추가되었습니다.')
-        setFormData({ image_url: '', link_url: '' })
-        setShowAddModal(false)
-        await fetchBanners()
-      }
-    } catch (error) {
-      console.error('Error:', error)
-      alert('배너 추가 중 오류가 발생했습니다.')
-    }
-  }
+        const { error } = await supabase
+          .from('banners')
+          .insert([bannerData]);
 
-  const deleteBanner = async (bannerId: number) => {
-    if (!confirm('정말로 이 배너를 삭제하시겠습니까?')) {
-      return
+        if (error) throw error;
+        alert('배너가 성공적으로 등록되었습니다.');
+      }
+
+      setShowModal(false);
+      setEditingBanner(null);
+      setFormData({
+        title: '',
+        image_url: '',
+        link_url: '',
+        is_active: true,
+        display_order: 1
+      });
+      await fetchBanners();
+    } catch (error) {
+      console.error('Error saving banner:', error);
+      alert('배너 저장 중 오류가 발생했습니다.');
+    }
+  };
+
+  const handleEdit = (banner: Banner) => {
+    setEditingBanner(banner);
+    setFormData({
+      title: banner.title,
+      image_url: banner.image_url,
+      link_url: banner.link_url || '',
+      is_active: banner.is_active,
+      display_order: banner.display_order
+    });
+    setShowModal(true);
+  };
+
+  const handleDelete = async (banner: Banner) => {
+    if (!confirm(`정말로 "${banner.title}" 배너를 삭제하시겠습니까?`)) {
+      return;
     }
 
     try {
       const { error } = await supabase
         .from('banners')
         .delete()
-        .eq('id', bannerId)
+        .eq('id', banner.id);
 
-      if (error) {
-        console.error('Error deleting banner:', error)
-        alert('배너 삭제 중 오류가 발생했습니다.')
-      } else {
-        alert('배너가 삭제되었습니다.')
-        await fetchBanners()
+      if (error) throw error;
+
+      // 이미지 파일도 삭제
+      if (banner.image_url.includes('supabase')) {
+        const filePath = banner.image_url.split('/').pop();
+        if (filePath) {
+          await supabase.storage
+            .from('public')
+            .remove([`banners/${filePath}`]);
+        }
       }
-    } catch (error) {
-      console.error('Error:', error)
-      alert('배너 삭제 중 오류가 발생했습니다.')
-    }
-  }
 
-  if (authLoading || loading) {
-    return (
-      <>
-        <Header />
-        <div className="container mx-auto px-4 py-8">
-          <div className="text-center">로딩 중...</div>
-        </div>
-      </>
-    )
+      alert('배너가 성공적으로 삭제되었습니다.');
+      await fetchBanners();
+    } catch (error) {
+      console.error('Error deleting banner:', error);
+      alert('배너 삭제 중 오류가 발생했습니다.');
+    }
+  };
+
+  const toggleActive = async (banner: Banner) => {
+    try {
+      const { error } = await supabase
+        .from('banners')
+        .update({ is_active: !banner.is_active })
+        .eq('id', banner.id);
+
+      if (error) throw error;
+      await fetchBanners();
+    } catch (error) {
+      console.error('Error toggling banner status:', error);
+      alert('배너 상태 변경 중 오류가 발생했습니다.');
+    }
+  };
+
+  const openModal = () => {
+    setEditingBanner(null);
+    setFormData({
+      title: '',
+      image_url: '',
+      link_url: '',
+      is_active: true,
+      display_order: Math.max(...banners.map(b => b.display_order), 0) + 1
+    });
+    setShowModal(true);
+  };
+
+  if (authLoading || adminLoading) {
+    return <div className="min-h-screen flex items-center justify-center">로딩 중...</div>;
   }
 
   if (!isAdmin) {
-    return null
+    return null;
   }
 
   return (
@@ -147,113 +215,211 @@ export default function AdminBannersPage() {
       <Header />
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-6xl mx-auto">
-          <div className="flex items-center justify-between mb-8">
+          <div className="flex justify-between items-center mb-8">
             <h1 className="text-3xl font-bold text-gray-900">배너 관리</h1>
-            <div className="flex space-x-4">
-              <button
-                onClick={() => setShowAddModal(true)}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium"
-              >
-                배너 추가
-              </button>
-              <button
-                onClick={() => router.back()}
-                className="text-gray-600 hover:text-gray-800"
-              >
-                ← 돌아가기
-              </button>
+            <button
+              onClick={openModal}
+              className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 flex items-center gap-2"
+            >
+              <PlusIcon className="h-5 w-5" />
+              새 배너 등록
+            </button>
+          </div>
+
+          {/* 통계 */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div className="bg-white rounded-lg shadow-sm border p-4">
+              <div className="text-sm font-medium text-gray-500">전체 배너</div>
+              <div className="text-2xl font-bold text-gray-900">{banners.length}</div>
+            </div>
+            <div className="bg-white rounded-lg shadow-sm border p-4">
+              <div className="text-sm font-medium text-gray-500">활성 배너</div>
+              <div className="text-2xl font-bold text-green-600">
+                {banners.filter(b => b.is_active).length}
+              </div>
+            </div>
+            <div className="bg-white rounded-lg shadow-sm border p-4">
+              <div className="text-sm font-medium text-gray-500">비활성 배너</div>
+              <div className="text-2xl font-bold text-red-600">
+                {banners.filter(b => !b.is_active).length}
+              </div>
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow-sm border">
-            {banners.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                등록된 배너가 없습니다.
+          {/* 배너 목록 */}
+          <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+            {loading ? (
+              <div className="p-8 text-center">
+                <div className="text-gray-500">로딩 중...</div>
+              </div>
+            ) : banners.length === 0 ? (
+              <div className="p-8 text-center">
+                <div className="text-gray-500">등록된 배너가 없습니다.</div>
+                <button
+                  onClick={openModal}
+                  className="mt-4 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+                >
+                  첫 번째 배너 등록하기
+                </button>
               </div>
             ) : (
-              <div className="divide-y divide-gray-200">
-                {banners.map((banner) => (
-                  <div key={banner.id} className="p-6">
-                    <div className="flex items-center space-x-4">
-                      <div className="flex-shrink-0">
-                        {banner.image_url ? (
-                          <img
-                            src={banner.image_url}
-                            alt="배너"
-                            className="w-20 h-20 object-cover rounded-lg border"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHZpZXdCb3g9IjAgMCA4MCA4MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjgwIiBoZWlnaHQ9IjgwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik0yNCAzNkgzNlYyNEgyNFYzNlpNNDQgMjRWMzZINTZWMjRINDRaTTI0IDU2SDM2VjQ0SDI0VjU2Wk00NCA0NFY1Nkg1NlY0NEg0NFoiIGZpbGw9IiM5Q0E0QUYiLz4KPC9zdmc+Cg=='
-                            }}
-                          />
-                        ) : (
-                          <div className="w-20 h-20 bg-gray-200 rounded-lg border flex items-center justify-center">
-                            <span className="text-gray-400 text-xs">이미지 없음</span>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        배너 정보
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        상태
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        순서
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        등록일
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        관리
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {banners.map((banner) => (
+                      <tr key={banner.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4">
+                          <div className="flex items-center">
+                            <div className="flex-shrink-0 h-16 w-24">
+                              <img
+                                className="h-16 w-24 object-cover rounded"
+                                src={banner.image_url}
+                                alt={banner.title}
+                              />
+                            </div>
+                            <div className="ml-4">
+                              <div className="text-sm font-medium text-gray-900">
+                                {banner.title}
+                              </div>
+                              {banner.link_url && (
+                                <div className="text-sm text-gray-500">
+                                  <a
+                                    href={banner.link_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="hover:text-blue-600"
+                                  >
+                                    {banner.link_url}
+                                  </a>
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <div className="text-sm text-gray-600 mb-1">
-                          <strong>이미지 URL:</strong>
-                        </div>
-                        <div className="text-sm text-gray-900 mb-2 break-all">
-                          {banner.image_url || '없음'}
-                        </div>
-                        <div className="text-sm text-gray-600 mb-1">
-                          <strong>링크 URL:</strong>
-                        </div>
-                        <div className="text-sm text-gray-900 mb-2 break-all">
-                          {banner.link_url || '없음'}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          등록일: {new Date(banner.created_at).toLocaleString('ko-KR')}
-                        </div>
-                      </div>
-                      <div className="flex-shrink-0">
-                        <button
-                          onClick={() => deleteBanner(banner.id)}
-                          className="text-red-600 hover:text-red-900 text-sm"
-                        >
-                          삭제
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <button
+                            onClick={() => toggleActive(banner)}
+                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              banner.is_active
+                                ? 'bg-green-100 text-green-800'
+                                : 'bg-red-100 text-red-800'
+                            }`}
+                          >
+                            {banner.is_active ? (
+                              <>
+                                <EyeIcon className="h-3 w-3 mr-1" />
+                                활성
+                              </>
+                            ) : (
+                              <>
+                                <EyeSlashIcon className="h-3 w-3 mr-1" />
+                                비활성
+                              </>
+                            )}
+                          </button>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {banner.display_order}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {new Date(banner.created_at).toLocaleDateString()}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <div className="flex justify-end gap-2">
+                            <button
+                              onClick={() => handleEdit(banner)}
+                              className="text-blue-600 hover:text-blue-900"
+                              title="수정"
+                            >
+                              <PencilIcon className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(banner)}
+                              className="text-red-600 hover:text-red-900"
+                              title="삭제"
+                            >
+                              <TrashIcon className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* 배너 추가 모달 */}
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
-            <div className="flex justify-between items-center p-6 border-b">
-              <h3 className="text-lg font-semibold">배너 추가</h3>
-              <button
-                onClick={() => setShowAddModal(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
+      {/* 모달 */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">
+              {editingBanner ? '배너 수정' : '새 배너 등록'}
+            </h3>
 
-            <form onSubmit={addBanner} className="p-6 space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  이미지 URL *
+                  제목 *
                 </label>
                 <input
-                  type="url"
-                  value={formData.image_url}
-                  onChange={(e) => setFormData({ ...formData, image_url: e.target.value })}
+                  type="text"
+                  value={formData.title}
+                  onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="배너 제목을 입력하세요"
                   required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="https://example.com/image.jpg"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  이미지 *
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleImageUpload(file);
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2"
+                  disabled={uploading}
+                />
+                {uploading && (
+                  <div className="text-sm text-blue-600">이미지 업로드 중...</div>
+                )}
+                {formData.image_url && (
+                  <div className="mt-2">
+                    <img
+                      src={formData.image_url}
+                      alt="미리보기"
+                      className="h-20 w-32 object-cover rounded border"
+                    />
+                  </div>
+                )}
               </div>
 
               <div>
@@ -263,25 +429,52 @@ export default function AdminBannersPage() {
                 <input
                   type="url"
                   value={formData.link_url}
-                  onChange={(e) => setFormData({ ...formData, link_url: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="https://example.com"
+                  onChange={(e) => setFormData(prev => ({ ...prev, link_url: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="클릭시 이동할 URL (선택사항)"
                 />
               </div>
 
-              <div className="flex space-x-3 pt-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  표시 순서
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={formData.display_order}
+                  onChange={(e) => setFormData(prev => ({ ...prev, display_order: parseInt(e.target.value) || 1 }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="is_active"
+                  checked={formData.is_active}
+                  onChange={(e) => setFormData(prev => ({ ...prev, is_active: e.target.checked }))}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <label htmlFor="is_active" className="ml-2 block text-sm text-gray-900">
+                  즉시 활성화
+                </label>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-4">
                 <button
                   type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                  onClick={() => setShowModal(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
                 >
                   취소
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                  disabled={uploading || !formData.title.trim() || !formData.image_url}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 disabled:opacity-50"
                 >
-                  추가
+                  {editingBanner ? '수정' : '등록'}
                 </button>
               </div>
             </form>
@@ -289,5 +482,5 @@ export default function AdminBannersPage() {
         </div>
       )}
     </>
-  )
+  );
 }

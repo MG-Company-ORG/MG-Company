@@ -1,136 +1,149 @@
-'use client'
+"use client";
 
-import { useState, useEffect } from 'react'
-import { useSearchParams, useRouter } from 'next/navigation'
-import Header from '@/components/Header'
-import JobApplicationModal from '@/components/modals/JobApplicationModal'
-import { supabase } from '@/lib/supabase/client'
-import { useAuth } from '@/lib/hooks/useAuth'
-import { useUserType } from '@/lib/hooks/useUserType'
-import { useModal } from '@/lib/hooks/useModal'
-import { useApplications } from '@/lib/hooks/useApplications'
-import { Post } from '@/lib/types/database'
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import Header from "@/components/Header";
+import JobApplicationModal from "@/components/modals/JobApplicationModal";
+import { supabase } from "@/lib/supabase/client";
+import { useAuth } from "@/lib/hooks/useAuth";
+import { useModal } from "@/lib/hooks/useModal";
+import { useApplications } from "@/lib/hooks/useApplications";
+import { useProfile } from "@/lib/hooks/useProfile";
+import { Post } from "@/lib/types/database";
 
-export default function SearchPage() {
-  const { user } = useAuth()
-  const { isJobseeker } = useUserType()
-  const searchParams = useSearchParams()
-  const router = useRouter()
-  const [posts, setPosts] = useState<Post[]>([])
-  const [loading, setLoading] = useState(true)
-  const [selectedPost, setSelectedPost] = useState<Post | null>(null)
-  const { isOpen: isApplicationModalOpen, open: openApplicationModal, close: closeApplicationModal } = useModal()
-  const { checkApplicationExists } = useApplications()
+function SearchPageContent() {
+  const { user } = useAuth();
+  const { isJobseeker } = useProfile();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+  const {
+    isOpen: isApplicationModalOpen,
+    open: openApplicationModal,
+    close: closeApplicationModal,
+  } = useModal();
+  const { checkApplicationExists } = useApplications(undefined, {
+    autoFetch: false,
+  });
 
   // Search filters
   const [searchFilters, setSearchFilters] = useState({
-    keyword: searchParams?.get('q') || '',
-    location: '',
-    minPay: '',
-    maxPay: '',
-    sortBy: 'latest' as 'latest' | 'pay_high' | 'pay_low' | 'deadline'
-  })
+    keyword: searchParams?.get("q") || "",
+    location: "",
+    minPay: "",
+    maxPay: "",
+    sortBy: "latest" as "latest" | "pay_high" | "pay_low" | "deadline",
+  });
 
   useEffect(() => {
-    fetchPosts()
-  }, [searchFilters])
+    fetchPosts();
+  }, [searchFilters]);
 
   const fetchPosts = async () => {
-    setLoading(true)
+    setLoading(true);
 
     try {
-      let query = supabase
-        .from('posts')
-        .select('*')
-        .eq('status', 'active')
+      let query = supabase.from("posts").select("*").eq("status", "active");
 
       // Keyword search
       if (searchFilters.keyword) {
-        query = query.or(`title.ilike.%${searchFilters.keyword}%,details.ilike.%${searchFilters.keyword}%`)
+        query = query.or(
+          `title.ilike.%${searchFilters.keyword}%,details.ilike.%${searchFilters.keyword}%`
+        );
       }
 
       // Location filter
       if (searchFilters.location) {
-        query = query.ilike('location', `%${searchFilters.location}%`)
+        query = query.ilike("location", `%${searchFilters.location}%`);
       }
 
       // Pay range filter
       if (searchFilters.minPay) {
-        query = query.gte('pay', parseInt(searchFilters.minPay))
+        query = query.gte("pay", parseInt(searchFilters.minPay));
       }
       if (searchFilters.maxPay) {
-        query = query.lte('pay', parseInt(searchFilters.maxPay))
+        query = query.lte("pay", parseInt(searchFilters.maxPay));
       }
 
       // Sorting
       switch (searchFilters.sortBy) {
-        case 'latest':
-          query = query.order('created_at', { ascending: false })
-          break
-        case 'pay_high':
-          query = query.order('pay', { ascending: false, nullsLast: true })
-          break
-        case 'pay_low':
-          query = query.order('pay', { ascending: true, nullsLast: true })
-          break
-        case 'deadline':
-          query = query.order('application_deadline', { ascending: true, nullsLast: true })
-          break
+        case "latest":
+          query = query.order("created_at", { ascending: false });
+          break;
+        case "pay_high":
+          query = query.order("pay", { ascending: false, nullsFirst: false });
+          break;
+        case "pay_low":
+          query = query.order("pay", { ascending: true, nullsFirst: false });
+          break;
+        case "deadline":
+          query = query.order("application_deadline", {
+            ascending: true,
+            nullsFirst: false,
+          });
+          break;
       }
 
-      const { data, error } = await query
+      const { data, error } = await query;
 
       if (error) {
-        console.error('Error fetching posts:', error)
+        console.error("Error fetching posts:", error);
       } else {
-        setPosts(data || [])
+        setPosts(data || []);
       }
     } catch (error) {
-      console.error('Error:', error)
+      console.error("Error:", error);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const handlePostClick = async (post: Post) => {
     if (!user) {
-      alert('로그인이 필요합니다.')
-      router.push('/login')
-      return
+      alert("로그인이 필요합니다.");
+      router.push("/login");
+      return;
     }
 
     if (isJobseeker) {
       // Check if already applied
-      const hasApplied = await checkApplicationExists(post.id)
+      const hasApplied = await checkApplicationExists(post.id);
       if (hasApplied) {
-        alert('이미 지원한 공고입니다.')
-        return
+        alert("이미 지원한 공고입니다.");
+        return;
       }
 
-      setSelectedPost(post)
-      openApplicationModal()
+      setSelectedPost(post);
+      openApplicationModal();
     }
-  }
+  };
 
   const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault()
-    fetchPosts()
-  }
+    e.preventDefault();
+    fetchPosts();
+  };
 
   const isDeadlinePassed = (deadline: string | null) => {
-    if (!deadline) return false
-    return new Date(deadline) < new Date()
-  }
+    if (!deadline) return false;
+    return new Date(deadline) < new Date();
+  };
 
   return (
     <>
       <Header />
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-6xl mx-auto">
-          <h1 className="text-3xl font-bold text-gray-900 mb-8">구인 공고 검색</h1>
+          <h1 className="text-3xl font-bold text-gray-900 mb-8">
+            구인 공고 검색
+          </h1>
 
           {/* Search Form */}
-          <form onSubmit={handleSearch} className="bg-white rounded-lg shadow-sm border p-6 mb-8">
+          <form
+            onSubmit={handleSearch}
+            className="bg-white rounded-lg shadow-sm border p-6 mb-8"
+          >
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
               {/* Keyword */}
               <div>
@@ -140,7 +153,12 @@ export default function SearchPage() {
                 <input
                   type="text"
                   value={searchFilters.keyword}
-                  onChange={(e) => setSearchFilters(prev => ({ ...prev, keyword: e.target.value }))}
+                  onChange={(e) =>
+                    setSearchFilters((prev) => ({
+                      ...prev,
+                      keyword: e.target.value,
+                    }))
+                  }
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="제목, 내용 검색..."
                 />
@@ -154,7 +172,12 @@ export default function SearchPage() {
                 <input
                   type="text"
                   value={searchFilters.location}
-                  onChange={(e) => setSearchFilters(prev => ({ ...prev, location: e.target.value }))}
+                  onChange={(e) =>
+                    setSearchFilters((prev) => ({
+                      ...prev,
+                      location: e.target.value,
+                    }))
+                  }
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="지역명 입력..."
                 />
@@ -168,7 +191,12 @@ export default function SearchPage() {
                 <input
                   type="number"
                   value={searchFilters.minPay}
-                  onChange={(e) => setSearchFilters(prev => ({ ...prev, minPay: e.target.value }))}
+                  onChange={(e) =>
+                    setSearchFilters((prev) => ({
+                      ...prev,
+                      minPay: e.target.value,
+                    }))
+                  }
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="원"
                 />
@@ -182,7 +210,12 @@ export default function SearchPage() {
                 <input
                   type="number"
                   value={searchFilters.maxPay}
-                  onChange={(e) => setSearchFilters(prev => ({ ...prev, maxPay: e.target.value }))}
+                  onChange={(e) =>
+                    setSearchFilters((prev) => ({
+                      ...prev,
+                      maxPay: e.target.value,
+                    }))
+                  }
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="원"
                 />
@@ -197,7 +230,12 @@ export default function SearchPage() {
                 </label>
                 <select
                   value={searchFilters.sortBy}
-                  onChange={(e) => setSearchFilters(prev => ({ ...prev, sortBy: e.target.value as any }))}
+                  onChange={(e) =>
+                    setSearchFilters((prev) => ({
+                      ...prev,
+                      sortBy: e.target.value as any,
+                    }))
+                  }
                   className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   <option value="latest">최신순</option>
@@ -241,10 +279,15 @@ export default function SearchPage() {
                       key={post.id}
                       onClick={() => handlePostClick(post)}
                       className={`bg-white rounded-lg shadow-sm border p-6 transition-shadow ${
-                        isJobseeker && !isDeadlinePassed(post.application_deadline)
-                          ? 'hover:shadow-md cursor-pointer'
-                          : ''
-                      } ${isDeadlinePassed(post.application_deadline) ? 'opacity-60' : ''}`}
+                        isJobseeker &&
+                        !isDeadlinePassed(post.application_deadline)
+                          ? "hover:shadow-md cursor-pointer"
+                          : ""
+                      } ${
+                        isDeadlinePassed(post.application_deadline)
+                          ? "opacity-60"
+                          : ""
+                      }`}
                     >
                       <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between">
                         <div className="flex-1">
@@ -252,23 +295,35 @@ export default function SearchPage() {
                             <h3 className="text-xl font-semibold text-gray-900">
                               {post.title}
                               {isDeadlinePassed(post.application_deadline) && (
-                                <span className="ml-2 text-sm text-red-600">(마감됨)</span>
+                                <span className="ml-2 text-sm text-red-600">
+                                  (마감됨)
+                                </span>
                               )}
                             </h3>
                           </div>
 
                           <div className="text-sm text-gray-600 mb-3 flex flex-wrap gap-4">
                             <span>📅 {post.post_date}</span>
-                            {post.pay && <span>💰 {post.pay.toLocaleString()}원</span>}
+                            {post.pay && (
+                              <span>💰 {post.pay.toLocaleString()}원</span>
+                            )}
                             {post.location && <span>📍 {post.location}</span>}
                             {post.application_deadline && (
-                              <span className={isDeadlinePassed(post.application_deadline) ? 'text-red-600' : ''}>
+                              <span
+                                className={
+                                  isDeadlinePassed(post.application_deadline)
+                                    ? "text-red-600"
+                                    : ""
+                                }
+                              >
                                 ⏰ 마감: {post.application_deadline}
                               </span>
                             )}
                           </div>
 
-                          <p className="text-gray-700 mb-4 line-clamp-3">{post.details}</p>
+                          <p className="text-gray-700 mb-4 line-clamp-3">
+                            {post.details}
+                          </p>
 
                           {post.external_link && (
                             <a
@@ -283,16 +338,17 @@ export default function SearchPage() {
                           )}
                         </div>
 
-                        {isJobseeker && !isDeadlinePassed(post.application_deadline) && (
-                          <div className="mt-4 lg:mt-0 lg:ml-6">
-                            <button
-                              onClick={() => handlePostClick(post)}
-                              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-                            >
-                              지원하기
-                            </button>
-                          </div>
-                        )}
+                        {isJobseeker &&
+                          !isDeadlinePassed(post.application_deadline) && (
+                            <div className="mt-4 lg:mt-0 lg:ml-6">
+                              <button
+                                onClick={() => handlePostClick(post)}
+                                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                              >
+                                지원하기
+                              </button>
+                            </div>
+                          )}
                       </div>
                     </div>
                   ))}
@@ -309,9 +365,26 @@ export default function SearchPage() {
         post={selectedPost}
         onApplicationSubmitted={() => {
           // Optionally refresh the search results
-          fetchPosts()
+          fetchPosts();
         }}
       />
     </>
-  )
+  );
+}
+
+export default function SearchPage() {
+  return (
+    <Suspense
+      fallback={
+        <>
+          <Header />
+          <div className="container mx-auto px-4 py-8">
+            <div className="text-center">로딩 중...</div>
+          </div>
+        </>
+      }
+    >
+      <SearchPageContent />
+    </Suspense>
+  );
 }

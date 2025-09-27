@@ -59,3 +59,13 @@ pids
 
 # Supabase
 .supabase/
+supabase/.temp/
+
+# Temporary files
+*.tmp
+.temp/
+temp/
+
+# Migration temporary files
+*_migration_fix.sql
+fix_*_schema.sql

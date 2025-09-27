@@ -2,18 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase/client'
+import { Post } from '@/lib/types/database'
 
-export interface Post {
-  id: number
-  title: string
-  details: string
-  post_date: string
-  pay: number | null
-  location: string | null
-  external_link: string | null
-  user_id: string
-  created_at: string
-}
 
 export function usePosts(dateRange?: { start: Date; end: Date }) {
   const [posts, setPosts] = useState<Post[]>([])

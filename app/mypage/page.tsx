@@ -1,79 +1,68 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useAuth } from '@/lib/hooks/useAuth'
+import { useRouter } from 'next/navigation'
+import { useProfile } from '@/lib/hooks/useProfile'
 import { supabase } from '@/lib/supabase/client'
 import Header from '@/components/Header'
-
-interface Post {
-  id: number
-  title: string
-  details: string
-  post_date: string
-  pay: number | null
-  location: string | null
-  external_link: string | null
-  created_at: string
-}
+import { UserIcon, EnvelopeIcon, CalendarIcon, MapPinIcon, BriefcaseIcon } from '@heroicons/react/24/outline'
 
 export default function MyPage() {
-  const { user, loading } = useAuth()
-  const [posts, setPosts] = useState<Post[]>([])
-  const [postsLoading, setPostsLoading] = useState(true)
+  const { profile, loading: profileLoading, userType, isEmployer, isJobseeker, isAdmin } = useProfile()
+  const [userStats, setUserStats] = useState({
+    totalApplications: 0,
+    pendingApplications: 0,
+    acceptedApplications: 0,
+    rejectedApplications: 0
+  })
+  const [statsLoading, setStatsLoading] = useState(true)
+  const router = useRouter()
 
   useEffect(() => {
-    if (user) {
-      fetchUserPosts()
-    }
-  }, [user])
+    if (profileLoading) return
 
-  const fetchUserPosts = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('posts')
-        .select('*')
-        .eq('user_id', user?.id)
-        .order('created_at', { ascending: false })
-
-      if (error) {
-        console.error('Error fetching posts:', error)
-      } else {
-        setPosts(data || [])
-      }
-    } catch (error) {
-      console.error('Error:', error)
-    } finally {
-      setPostsLoading(false)
-    }
-  }
-
-  const deletePost = async (postId: number) => {
-    if (!confirm('정말로 이 공고를 삭제하시겠습니까?')) {
+    if (!profile?.id) {
+      router.push('/login')
       return
     }
 
-    try {
-      const { error } = await supabase
-        .from('posts')
-        .delete()
-        .eq('id', postId)
-        .eq('user_id', user?.id)
+    fetchUserStats()
+  }, [profile?.id, profileLoading, router])
 
-      if (error) {
-        console.error('Error deleting post:', error)
-        alert('삭제 중 오류가 발생했습니다.')
-      } else {
-        // Remove from local state
-        setPosts(posts.filter(post => post.id !== postId))
-        alert('공고가 삭제되었습니다.')
+  const fetchUserStats = async () => {
+    if (!profile?.id) return
+
+    try {
+      setStatsLoading(true)
+
+      // For jobseekers, fetch application stats
+      if (isJobseeker) {
+        const { data: applications, error } = await supabase
+          .from('applications')
+          .select('status')
+          .eq('applicant_id', profile.id)
+
+        if (error) {
+          console.error('Error fetching application stats:', error)
+        } else {
+          const stats = {
+            totalApplications: applications?.length || 0,
+            pendingApplications: applications?.filter(app => app.status === 'pending').length || 0,
+            acceptedApplications: applications?.filter(app => app.status === 'accepted').length || 0,
+            rejectedApplications: applications?.filter(app => app.status === 'rejected').length || 0
+          }
+          setUserStats(stats)
+        }
       }
+      // For employers, stats are shown in employer dashboard, not here
     } catch (error) {
       console.error('Error:', error)
-      alert('삭제 중 오류가 발생했습니다.')
+    } finally {
+      setStatsLoading(false)
     }
   }
 
-  if (loading) {
+  if (profileLoading) {
     return (
       <>
         <Header />
@@ -84,17 +73,8 @@ export default function MyPage() {
     )
   }
 
-  if (!user) {
-    return (
-      <>
-        <Header />
-        <div className="container mx-auto px-4 py-8">
-          <div className="text-center">
-            <p>로그인이 필요합니다.</p>
-          </div>
-        </div>
-      </>
-    )
+  if (!profile) {
+    return null
   }
 
   return (
@@ -104,65 +84,78 @@ export default function MyPage() {
         <div className="max-w-4xl mx-auto">
           <h1 className="text-3xl font-bold text-gray-900 mb-8">마이페이지</h1>
 
+          {/* User Profile Information */}
           <div className="bg-white rounded-lg shadow-sm border p-6 mb-8">
-            <h2 className="text-xl font-semibold mb-4">내 정보</h2>
-            <div className="text-gray-600">
-              <p>이메일: {user.email}</p>
-              <p>가입일: {new Date(user.created_at || '').toLocaleDateString('ko-KR')}</p>
+            <h2 className="text-xl font-semibold mb-4 flex items-center">
+              <UserIcon className="h-5 w-5 mr-2" />
+              내 정보
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-3">
+                <div className="flex items-center">
+                  <EnvelopeIcon className="h-4 w-4 text-gray-400 mr-2" />
+                  <span className="text-sm text-gray-600">이메일:</span>
+                  <span className="ml-2 text-sm font-medium">{profile.email}</span>
+                </div>
+                <div className="flex items-center">
+                  <CalendarIcon className="h-4 w-4 text-gray-400 mr-2" />
+                  <span className="text-sm text-gray-600">가입일:</span>
+                  <span className="ml-2 text-sm font-medium">
+                    {new Date(profile.created_at || '').toLocaleDateString('ko-KR')}
+                  </span>
+                </div>
+                <div className="flex items-center">
+                  <BriefcaseIcon className="h-4 w-4 text-gray-400 mr-2" />
+                  <span className="text-sm text-gray-600">사용자 유형:</span>
+                  <span className="ml-2 text-sm font-medium">
+                    {isAdmin ? '관리자' : userType === 'employer' ? '구인자' : '구직자'}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow-sm border p-6">
-            <h2 className="text-xl font-semibold mb-6">내가 작성한 공고</h2>
-
-            {postsLoading ? (
-              <div className="text-center py-8">로딩 중...</div>
-            ) : posts.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                작성한 공고가 없습니다.
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {posts.map((post) => (
-                  <div
-                    key={post.id}
-                    className="border border-gray-200 rounded-lg p-4 hover:shadow-sm transition-shadow"
-                  >
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <h3 className="text-lg font-medium text-gray-900 mb-2">
-                          {post.title}
-                        </h3>
-                        <div className="text-sm text-gray-600 mb-2">
-                          <span className="mr-4">📅 {post.post_date}</span>
-                          {post.pay && <span className="mr-4">💰 {post.pay.toLocaleString()}원</span>}
-                          {post.location && <span>📍 {post.location}</span>}
-                        </div>
-                        <p className="text-gray-700 mb-3">{post.details}</p>
-                        {post.external_link && (
-                          <a
-                            href={post.external_link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:text-blue-800 text-sm"
-                          >
-                            🔗 외부 링크
-                          </a>
-                        )}
-                      </div>
-                      <div className="flex space-x-2 ml-4">
-                        <button
-                          onClick={() => deletePost(post.id)}
-                          className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200"
-                        >
-                          삭제
-                        </button>
-                      </div>
-                    </div>
+          {/* Jobseeker Stats */}
+          {isJobseeker && (
+            <div className="bg-white rounded-lg shadow-sm border p-6 mb-8">
+              <h2 className="text-xl font-semibold mb-4">지원 현황</h2>
+              {statsLoading ? (
+                <div className="text-center py-4">로딩 중...</div>
+              ) : (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="text-center p-4 bg-blue-50 rounded-lg">
+                    <div className="text-2xl font-bold text-blue-600">{userStats.totalApplications}</div>
+                    <div className="text-sm text-gray-600">총 지원</div>
                   </div>
-                ))}
+                  <div className="text-center p-4 bg-yellow-50 rounded-lg">
+                    <div className="text-2xl font-bold text-yellow-600">{userStats.pendingApplications}</div>
+                    <div className="text-sm text-gray-600">검토 중</div>
+                  </div>
+                  <div className="text-center p-4 bg-green-50 rounded-lg">
+                    <div className="text-2xl font-bold text-green-600">{userStats.acceptedApplications}</div>
+                    <div className="text-sm text-gray-600">승인됨</div>
+                  </div>
+                  <div className="text-center p-4 bg-red-50 rounded-lg">
+                    <div className="text-2xl font-bold text-red-600">{userStats.rejectedApplications}</div>
+                    <div className="text-sm text-gray-600">거절됨</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Profile Settings */}
+          <div className="bg-white rounded-lg shadow-sm border p-6">
+            <h2 className="text-xl font-semibold mb-4">설정</h2>
+            <div className="text-gray-500">
+              <p className="mb-4">프로필 설정 기능은 추후 업데이트 예정입니다.</p>
+              <div className="text-sm">
+                <p>• 프로필 이미지 업로드</p>
+                <p>• 연락처 정보 수정</p>
+                <p>• 알림 설정</p>
+                <p>• 계정 보안 설정</p>
               </div>
-            )}
+            </div>
           </div>
         </div>
       </div>

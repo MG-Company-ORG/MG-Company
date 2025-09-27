@@ -1,18 +1,17 @@
-'use client'
+"use client";
 
-import Link from 'next/link'
-import { useAuth } from '@/lib/hooks/useAuth'
-import { useAdmin } from '@/lib/hooks/useAdmin'
-import { useUserType } from '@/lib/hooks/useUserType'
+import Link from "next/link";
+import { useAuth } from "@/lib/hooks/useAuth";
+import { useProfile } from "@/lib/hooks/useProfile";
 
 export default function Header() {
-  const { user, loading, signOut } = useAuth()
-  const { isAdmin } = useAdmin()
-  const { userType, isEmployer, isJobseeker } = useUserType()
+  const { signOut } = useAuth();
+  const { profile, loading, userType, isEmployer, isJobseeker, isAdmin } =
+    useProfile();
 
   const handleSignOut = async () => {
-    await signOut()
-  }
+    await signOut();
+  };
 
   return (
     <header className="bg-white shadow-sm border-b">
@@ -28,7 +27,7 @@ export default function Header() {
           <nav className="flex items-center space-x-2 sm:space-x-4">
             {loading ? (
               <div className="text-gray-500 text-sm">로딩중...</div>
-            ) : user ? (
+            ) : profile ? (
               // 로그인된 상태
               <>
                 {/* Role-based navigation */}
@@ -42,7 +41,7 @@ export default function Header() {
                       <span className="sm:hidden">지원자</span>
                     </Link>
                     <Link
-                      href="/mypage"
+                      href="/employer/jobs"
                       className="text-gray-600 hover:text-gray-900 px-2 sm:px-3 py-2 rounded-md text-xs sm:text-sm font-medium"
                     >
                       <span className="hidden sm:inline">공고 관리</span>
@@ -91,14 +90,24 @@ export default function Header() {
                   로그아웃
                 </button>
                 <div className="text-xs sm:text-sm text-gray-500 hidden md:block">
-                  {user.email}
-                  {isAdmin && <span className="ml-1 text-purple-600">(관리자)</span>}
-                  {userType && <span className="ml-1 text-blue-600">({userType === 'employer' ? '구인자' : '구직자'})</span>}
+                  {profile.email}
+                  {isAdmin && (
+                    <span className="ml-1 text-purple-600">(관리자)</span>
+                  )}
+                  {!isAdmin && userType && (
+                    <span className="ml-1 text-blue-600">
+                      ({userType === "employer" ? "구인자" : "구직자"})
+                    </span>
+                  )}
                 </div>
                 <div className="text-xs text-gray-500 md:hidden">
-                  {user.email?.split('@')[0]}
+                  {profile.email?.split("@")[0]}
                   {isAdmin && <span className="ml-1 text-purple-600">👑</span>}
-                  {userType && <span className="ml-1 text-blue-600">{userType === 'employer' ? '🏢' : '👤'}</span>}
+                  {!isAdmin && userType && (
+                    <span className="ml-1 text-blue-600">
+                      {userType === "employer" ? "🏢" : "👤"}
+                    </span>
+                  )}
                 </div>
               </>
             ) : (
@@ -122,5 +131,5 @@ export default function Header() {
         </div>
       </div>
     </header>
-  )
+  );
 }
